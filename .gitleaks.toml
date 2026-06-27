@@ -1,0 +1,3 @@
+# Extend the upstream gitleaks ruleset.
+[extend]
+useDefault = true
