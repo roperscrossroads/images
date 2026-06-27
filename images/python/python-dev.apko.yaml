@@ -1,0 +1,28 @@
+# Wolfi Python runtime base — DEV variant: same as python.apko.yaml + busybox,
+# for `kubectl exec ... -- sh` debugging. NOT for production app images.
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    - wolfi-baselayout
+    - ca-certificates-bundle
+    - busybox
+    - python-3.13
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 1000
+  users:
+    - username: nonroot
+      uid: 1000
+      gid: 1000
+  run-as: 1000
+
+entrypoint:
+  command: /usr/bin/python3.13
+
+archs:
+  - x86_64

@@ -1,0 +1,28 @@
+# Wolfi Python runtime base — minimal, distroless (no shell), runs as uid 1000.
+# Built with apko (no RUN, low-privilege), rebuilt nightly. Consumed by COPY-only
+# app images via `crane append -b <this>`.
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    - wolfi-baselayout
+    - ca-certificates-bundle
+    - python-3.13
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 1000
+  users:
+    - username: nonroot
+      uid: 1000
+      gid: 1000
+  run-as: 1000
+
+entrypoint:
+  command: /usr/bin/python3.13
+
+archs:
+  - x86_64

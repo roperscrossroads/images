@@ -1,0 +1,111 @@
+name: build base images
+
+# Self-built Wolfi base images via apko, rebuilt nightly for freshness.
+#
+# apko is LOW-PRIVILEGE: it assembles an image filesystem from apk packages with
+# no RUN step, no nested container, and no user namespace (the same model as
+# crane). So this runs on the unprivileged, scale-to-zero ARC runner with NO
+# special securityContext — nothing to relax.
+#
+# `apko publish` builds AND pushes to every target ref in one call, so this repo
+# needs apko only (crane is for the COPY-only *app* images that build FROM these).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"        # nightly ~06:17 UTC — shrink the CVE window to hours
+  push:
+    branches: [main]
+    paths:
+      - "images/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write              # push to ghcr.io/roperscrossroads/*
+
+env:
+  # Pinned tool versions (renovate/Dependabot these; verify advisories on bump).
+  APKO_VERSION: "1.2.19"
+  TRIVY_VERSION: "0.71.2"
+  GHCR: "ghcr.io/roperscrossroads"
+  # The internal registry host comes from the ZOT_REGISTRY secret (so it's masked
+  # in this public repo's Actions logs); push target is <ZOT_REGISTRY>/lab.
+
+jobs:
+  build:
+    # Dedicated, scale-to-zero self-hosted ARC runner set for this repo.
+    runs-on: images-arc
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: node,        config: images/node/node.apko.yaml }
+          - { name: node-dev,    config: images/node/node-dev.apko.yaml }
+          - { name: python,      config: images/python/python.apko.yaml }
+          - { name: python-dev,  config: images/python/python-dev.apko.yaml }
+          - { name: python-3.12, config: images/python/python-3.12.apko.yaml }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install apko (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          cd "$(mktemp -d)"
+          base="https://github.com/chainguard-dev/apko/releases/download/v${APKO_VERSION}"
+          curl -fsSLO "${base}/apko_${APKO_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "${base}/checksums.txt"
+          grep "  apko_${APKO_VERSION}_linux_amd64.tar.gz\$" checksums.txt | sha256sum -c -
+          tar xzf "apko_${APKO_VERSION}_linux_amd64.tar.gz"
+          install -m0755 apko_*/apko "$HOME/.local/bin/apko"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/apko" version
+
+      - name: Datestamp tag
+        id: ds
+        run: echo "tag=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Registry auth (ghcr + internal mirror)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZOT_REGISTRY: ${{ secrets.ZOT_REGISTRY }}
+          ZOT_USER: ${{ secrets.ZOT_USER }}
+          ZOT_TOKEN: ${{ secrets.ZOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.docker"
+          # username/password fields, NOT a base64 `auth` string (musl/BusyBox
+          # base64 can yield an unusable value).
+          cat > "$HOME/.docker/config.json" <<JSON
+          {"auths":{
+            "ghcr.io":{"username":"${GITHUB_ACTOR}","password":"${GHCR_TOKEN}"},
+            "${ZOT_REGISTRY}":{"username":"${ZOT_USER}","password":"${ZOT_TOKEN}"}
+          }}
+          JSON
+
+      - name: Build + publish (apko -> ghcr + internal mirror)
+        env:
+          ZOT_REGISTRY: ${{ secrets.ZOT_REGISTRY }}
+        run: |
+          set -euo pipefail
+          n="${{ matrix.image.name }}"
+          t="${{ steps.ds.outputs.tag }}"
+          zot="${ZOT_REGISTRY}/lab"
+          apko publish "${{ matrix.image.config }}" \
+            "${GHCR}/${n}:${t}" "${GHCR}/${n}:latest" \
+            "${zot}/${n}:${t}"  "${zot}/${n}:latest"
+
+      - name: Scan (Trivy — report-only for now)
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar xzf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy
+          # scan the public ghcr ref (no internal host in logs); report-only (|| true)
+          # until the build is green, then flip to a gate.
+          ./trivy image --quiet --severity HIGH,CRITICAL --no-progress \
+            "${GHCR}/${{ matrix.image.name }}:${{ steps.ds.outputs.tag }}" || true
+
+      # TODO (after the build is green): cosign keyless signing
+      # (needs `id-token: write` perms + a verify step). Deferred per operator.

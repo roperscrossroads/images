@@ -1,0 +1,6 @@
+# apko build artifacts (local validation output)
+*.tar
+_build/
+sbom*.json
+*.spdx.json
+*.sig
