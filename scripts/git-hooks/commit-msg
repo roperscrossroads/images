@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reject commit messages that contain internal infrastructure identifiers.
-# Rule: estate trust-tier policy (see ~/lab/AGENTS.md or ~/.claude/CLAUDE.md).
+# Rule: no internal infrastructure identifiers in public commit history.
 # Bypass with `git commit --no-verify` only as a last resort.
 #
 # Install: ln -sf ../../scripts/git-hooks/commit-msg .git/hooks/commit-msg

@@ -5,8 +5,8 @@
 # public tree; the commit-msg hook and scan.sh decode at load time. Inspect:
 #   grep -vE '^[[:space:]]*(#|$)' message-denylist.txt | base64 -d
 #
-# Mirrors the estate-canonical denylist kept on the workstation; this bundled
-# copy lets the GitHub Actions backstop run without a workstation dependency.
+# Bundled copy of the canonical denylist; lets the GitHub Actions backstop run
+# self-contained, without an external dependency.
 # Guards MESSAGES only — content-denylist.txt handles file content.
 
 XGJbYS16MC05LV0rXC5ob21lXC5hcnBhXGI=
