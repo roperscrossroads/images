@@ -20,6 +20,9 @@ small attack surface and a short CVE window.
 - **Low-privilege builds** — apko assembles an image filesystem from packages with
   no `RUN` step and no container-build sandbox (the same model as `crane`), so it
   runs on hardened, unprivileged CI runners.
+- **Multi-arch** — published as an OCI index for `linux/amd64` **and** `linux/arm64`.
+  apko cross-builds both from a single amd64 runner with no QEMU/emulation (it only
+  assembles filesystems from per-arch apk packages), so arm64 costs nothing extra.
 
 ## Images
 
@@ -61,6 +64,7 @@ App images append their built artifacts onto these bases with `crane` — no
 Dockerfile, no `RUN`:
 
 ```sh
+# The bases are multi-arch; --platform picks which arch of the base to append onto.
 crane append --platform linux/amd64 \
   -b ghcr.io/roperscrossroads/node:<digest> \
   -f app-layer.tar -t <registry>/<app>:<tag>
