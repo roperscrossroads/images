@@ -11,6 +11,15 @@ build config:
     mkdir -p _build
     {{apko}} build {{config}} local:build /work/_build/out.tar
 
+# Build the 32-bit ARM (ARMv7) base locally to _build/ (validation only). NOT apko —
+# needs `docker buildx` + QEMU binfmt registered first:
+#   docker run --privileged --rm tonistiigi/binfmt --install arm
+build-arm32:
+    mkdir -p _build
+    docker buildx build --platform linux/arm/v7 \
+      -o type=oci,dest=_build/python-arm32.oci.tar images/python-arm32
+    @echo "built _build/python-arm32.oci.tar (linux/arm/v7)"
+
 # Validate-build every apko config in images/.
 check:
     mkdir -p _build

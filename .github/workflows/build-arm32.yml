@@ -1,0 +1,144 @@
+name: build arm32 base images
+
+# 32-bit ARM (ARMv7) Python base for low-end Raspberry Pis (Zero 2 W, Pi 2, Pi 3).
+#
+# SEPARATE from build.yml on purpose: the Wolfi/apko base is 64-bit only, so this
+# variant is built from the official python slim image (Debian glibc) via
+# `docker buildx` under QEMU emulation. It publishes a DIFFERENT image name
+# (python-arm32), never folded into the Wolfi `python:` tag — different base OS,
+# shell present, different CVE surface. See images/python-arm32/README.md.
+#
+# RUNNER: GitHub-hosted `ubuntu-latest`. QEMU binfmt registration is privileged,
+# and the apko `images-arc` runner is deliberately unprivileged with no Docker
+# daemon — so this path runs on a hosted runner instead. Consequence: it is
+# GHCR-ONLY. The internal ZOT mirror is unreachable from a hosted runner, so
+# (unlike build.yml) there is no mirror push here. GHCR is the source of truth.
+#
+# WEEKLY, not nightly: the emulated build is slow and 32-bit consumers move slowly,
+# so a weekly rebuild is enough to keep the CVE window reasonable without burning
+# hosted-runner minutes. (build.yml stays nightly for the fast apko matrix.)
+
+on:
+  schedule:
+    - cron: "37 6 * * 1"        # weekly, Mondays ~06:37 UTC
+  push:
+    branches: [main]
+    paths:
+      - "images/python-arm32/**"
+      - ".github/workflows/build-arm32.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write              # push to ghcr.io/roperscrossroads/*
+
+env:
+  GHCR: "ghcr.io/roperscrossroads"
+  IMAGE: "python-arm32"
+  TRIVY_VERSION: "0.71.2"
+  # Add linux/arm/v6 here when the Pi Zero / Pi 1 variant lands — buildx will emit a
+  # single multi-arch python-arm32 manifest and each Pi pulls the arch it can run.
+  PLATFORMS: "linux/arm/v7"
+  # Base + emulator PINNED BY DIGEST (bump via renovate; verify advisories on bump).
+  #   python:3.13-slim-bookworm : multi-arch index digest (covers arm/v7)
+  #   tonistiigi/binfmt         : QEMU emulator installer
+  BASE_IMAGE: "python:3.13-slim-bookworm@sha256:fcbd8dfc2605ba7c2eca646846c5e892b2931e41f6227985154a596f26ab8ed7"
+  BINFMT_IMAGE: "tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
+  # How many recent image versions the prune job keeps (older ones, tagged or
+  # untagged, are deleted to bound GHCR storage). At weekly cadence, 5 ≈ 5 weeks.
+  KEEP_VERSIONS: "5"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Datestamp tag
+        id: ds
+        run: echo "tag=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Register QEMU (binfmt) for arm emulation
+        run: docker run --privileged --rm "${BINFMT_IMAGE}" --install arm
+
+      - name: Buildx builder (docker-container driver — required to --push a --platform build)
+        run: |
+          set -euo pipefail
+          docker buildx create --name arm32 --driver docker-container --use 2>/dev/null \
+            || docker buildx use arm32
+          docker buildx inspect --bootstrap
+
+      - name: Registry auth (ghcr)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.docker"
+          # username/password fields, NOT a base64 `auth` string (matches build.yml).
+          cat > "$HOME/.docker/config.json" <<JSON
+          {"auths":{
+            "ghcr.io":{"username":"${GITHUB_ACTOR}","password":"${GHCR_TOKEN}"}
+          }}
+          JSON
+
+      - name: Build + push (buildx -> ghcr)
+        run: |
+          set -euo pipefail
+          t="${{ steps.ds.outputs.tag }}"
+          # --provenance/--sbom off for now to keep a single clean manifest; enabling
+          # buildx SBOM attestation for parity with the apko SBOMs is a follow-up.
+          docker buildx build \
+            --platform "${PLATFORMS}" \
+            --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+            --provenance=false --sbom=false \
+            -t "${GHCR}/${IMAGE}:${t}" -t "${GHCR}/${IMAGE}:latest" \
+            --push \
+            images/python-arm32
+
+      - name: Scan (Trivy — report-only for now)
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar xzf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy
+          # report-only (|| true) until the build is green, then flip to a gate.
+          # Trivy inspects the arm/v7 manifest without executing it, so scanning
+          # from an amd64 runner is fine.
+          ./trivy image --quiet --severity HIGH,CRITICAL --no-progress \
+            "${GHCR}/${IMAGE}:${{ steps.ds.outputs.tag }}" || true
+
+  # Prune old versions so GHCR storage stays bounded. Every build publishes a new
+  # version (digest); moving :latest leaves the old one behind as an untagged
+  # version that keeps accumulating. This deletes all but the newest KEEP_VERSIONS.
+  #
+  # NEEDS A PAT: python-arm32 is a USER-owned GHCR package, and the ephemeral
+  # GITHUB_TOKEN cannot delete user-scoped package versions. Provide a classic PAT
+  # with `delete:packages` (+ `read:packages`) as the `GHCR_CLEANUP_TOKEN` secret.
+  # The job SKIPS cleanly when that secret is absent, so builds never break on it.
+  prune:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Delete old package versions (keep newest KEEP_VERSIONS)
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "GHCR_CLEANUP_TOKEN not set — skipping prune (add a PAT with delete:packages to enable)."
+            exit 0
+          fi
+          keep="${KEEP_VERSIONS}"
+          # List versions newest-first; drop the first $keep, delete the rest by id.
+          ids="$(gh api --paginate \
+            "/user/packages/container/${IMAGE}/versions?per_page=100" \
+            --jq '.[].id' | tail -n +"$((keep + 1))")"
+          if [ -z "$ids" ]; then
+            echo "Nothing to prune (<= ${keep} versions)."
+            exit 0
+          fi
+          for id in $ids; do
+            echo "Deleting version id=${id}"
+            gh api -X DELETE "/user/packages/container/${IMAGE}/versions/${id}"
+          done
