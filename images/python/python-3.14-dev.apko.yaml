@@ -1,6 +1,6 @@
-# Wolfi Python runtime base — minimal, distroless (no shell), runs as uid 1000.
-# Built with apko (no RUN, low-privilege), rebuilt nightly. Consumed by COPY-only
-# app images via `crane append -b <this>`.
+# Wolfi Python 3.14 runtime base — DEV variant: python-3.14 + busybox, for
+# `kubectl exec ... -- sh` debugging. NOT for production app images.
+# Also published as the `python-dev` alias.
 contents:
   repositories:
     - https://packages.wolfi.dev/os
@@ -9,7 +9,8 @@ contents:
   packages:
     - wolfi-baselayout
     - ca-certificates-bundle
-    - python-3.13
+    - busybox
+    - python-3.14
 
 accounts:
   groups:
@@ -22,7 +23,7 @@ accounts:
   run-as: 1000
 
 entrypoint:
-  command: /usr/bin/python3.13
+  command: /usr/bin/python3.14
 
 archs:
   - x86_64

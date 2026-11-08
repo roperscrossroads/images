@@ -33,10 +33,25 @@ small attack surface and a short CVE window.
 |---|---|---|---|
 | `node` | Wolfi + `nodejs-22` | `/usr/bin/node` | distroless, runs as `node` (uid 1000) |
 | `node-dev` | `node` + `busybox` | `/usr/bin/node` | debugging only — has a shell |
-| `python` | Wolfi + `python-3.13` | `/usr/bin/python3.13` | distroless, runs as `nonroot` (uid 1000) |
-| `python-dev` | `python` + `busybox` | `/usr/bin/python3.13` | debugging only — has a shell |
-| `python-3.12` | Wolfi + `python-3.12` + `bash` + `git` | `/usr/bin/python3.12` | app base for bash-script entrypoints / runtime `git`; runs as `app` (uid 1000) |
+| `python-3.14` | Wolfi + `python-3.14` | `/usr/bin/python3.14` | distroless, runs as `nonroot` (uid 1000). Also published as **`python`** |
+| `python-3.14-dev` | `python-3.14` + `busybox` | `/usr/bin/python3.14` | debugging only — has a shell. Also published as **`python-dev`** |
+| `python-3.14-app` | Wolfi + `python-3.14` + `bash` + `git` | `/usr/bin/python3.14` | app base for bash-script entrypoints / runtime `git`; runs as `app` (uid 1000) |
+| `python-3.13` | Wolfi + `python-3.13` | `/usr/bin/python3.13` | distroless, `nonroot`; for consumers pinned to 3.13 (security-only upstream since 2026-10) |
+| `python-3.12` | Wolfi + `python-3.12` + `bash` + `git` | `/usr/bin/python3.12` | **being retired**: replaced by `python-3.14-app`; dropped once its last consumer has moved |
 | `python-arm32` | **Debian** slim + `python-3.13` | `/usr/local/bin/python3.13` | **32-bit ARM (armv7)** for low-end Pis; glibc + piwheels, **not** Wolfi/distroless — see [below](#32-bit-arm-armv7) |
+
+### Versions and aliases
+
+Python images are **named by version** (`python-3.14`, `python-3.13`, ...). `python`
+and `python-dev` are **aliases** for the current recommended version, published from
+the same build. An alias moves to a new version only deliberately, noted here:
+
+| Date | Change |
+|---|---|
+| 2026-11 | `python`, `python-dev`: 3.13 → **3.14** (3.13 left upstream bug-fix support 2026-10-01) |
+
+Because app images layer packages built for one interpreter on top
+(`site-packages` is version-specific), **pin a versioned name or a digest**, not an alias.
 
 Published as (tags: `latest` + a `YYYYMMDD` datestamp; **pin by digest** downstream):
 
@@ -48,7 +63,7 @@ Published as (tags: `latest` + a `YYYYMMDD` datestamp; **pin by digest** downstr
 ```
 images/
   node/         node.apko.yaml   node-dev.apko.yaml          # Wolfi/apko
-  python/       python.apko.yaml python-dev.apko.yaml python-3.12.apko.yaml
+  python/       python-3.14{,-dev,-app}.apko.yaml python-3.13.apko.yaml python-3.12.apko.yaml
   python-arm32/ Dockerfile       README.md                   # Debian/buildx (32-bit ARM)
 .github/workflows/
   build.yml         # nightly + on-change apko matrix (64-bit; see "CI" below)

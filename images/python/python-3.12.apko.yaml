@@ -1,6 +1,6 @@
 # Python 3.12 app runtime base — includes bash and git.
 #
-# Variant of python.apko.yaml (3.13, distroless) for services that need:
+# Variant of python-3.14.apko.yaml (3.13, distroless) for services that need:
 #   - python-3.12 (requires-python >=3.12,<4)
 #   - bash  — shell-based entrypoints that use bash-specific syntax ([[ ]], ${VAR,,})
 #   - git   — runtime use (e.g. cloning repos at runtime)
@@ -11,7 +11,7 @@
 # /usr/bin/python3.12; packages installed with --prefix /usr/local land in
 # /usr/local/lib/python3.12/site-packages/ (on Python's default sys.path).
 #
-# Use python.apko.yaml (distroless, no shell) when the entrypoint is a static
+# Use python-3.14.apko.yaml (distroless, no shell) when the entrypoint is a static
 # binary or python -m invocation — that image is smaller and more hardened.
 contents:
   repositories:
