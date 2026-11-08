@@ -96,6 +96,13 @@ crane append --platform linux/amd64 \
   -b ghcr.io/roperscrossroads/node:<digest> \
   -f app-layer.tar -t <registry>/<app>:<tag>
 crane mutate <registry>/<app>:<tag> --entrypoint node --cmd server.js --user node ...
+
+# Python: pin the versioned image, not the `python` alias. Packages installed
+# with `--prefix /usr/local` land in /usr/local/lib/python3.14/site-packages, so
+# the layer only works on the interpreter version it was built for.
+crane append --platform linux/amd64 \
+  -b ghcr.io/roperscrossroads/python-3.14-app@sha256:<digest> \
+  -f deps-and-app.tar -t <registry>/<app>:<tag>
 ```
 
 ## 32-bit ARM (ARMv7)
@@ -121,7 +128,9 @@ privilege for QEMU, digest pins, SBOM parity, the future armv6 variant) live in
 
 `.github/workflows/build.yml` — nightly (`cron`) + on-change + `workflow_dispatch`.
 Per image (matrix): `apko publish` → ghcr + an optional internal mirror (`:latest`
-+ `:YYYYMMDD`) → Trivy scan (report-only for now). Runs on a **scale-to-zero
++ `:YYYYMMDD`, for the image name and each of its `aliases`) → Trivy scan
+(report-only for now). An alias is published from the same build, so it has the
+same digest as its versioned image. Runs on a **scale-to-zero
 self-hosted ARC runner**. apko is low-privilege, so the runner needs no special
 securityContext.
 
@@ -138,8 +147,12 @@ cleanly without one. See [`images/python-arm32/README.md`](images/python-arm32/R
 - `ZOT_USER` / `ZOT_TOKEN` — the internal mirror push credentials (optional).
 - `ZOT_REGISTRY` — the internal mirror host (kept as a secret so it's masked in
   logs; the workflow pushes to `<ZOT_REGISTRY>/lab/<image>`).
-- ghcr push uses the built-in `GITHUB_TOKEN`. First push creates the ghcr packages
-  **private** — flip each to **public** once if you want them public.
+- ghcr push uses the built-in `GITHUB_TOKEN`. The first push of a new image name
+  creates its ghcr package. Packages created in 2026-11 came out **public**
+  (inheriting this public repo's visibility); older ones were created **private**
+  and had to be flipped once. Check a new package's visibility after its first
+  publish. A brand-new package's first manifest push can also fail once with
+  `DENIED: requested access to the resource is denied`; re-running the job fixes it.
 - `GHCR_CLEANUP_TOKEN` — classic PAT with `delete:packages` (+ `read:packages`),
   used only by `build-arm32.yml`'s `prune` job. Required because `python-arm32` is a
   **user-owned** package and the built-in `GITHUB_TOKEN` can't delete user-scoped

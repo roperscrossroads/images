@@ -4,6 +4,9 @@ A **32-bit ARM (ARMv7)** Python 3.13 runtime base for low-end Raspberry Pis —
 **Zero 2 W, Pi 2, Pi 3** (in 32-bit mode). Published as
 `ghcr.io/roperscrossroads/python-arm32`.
 
+> Still on 3.13 while the Wolfi bases moved to 3.14 (2026-11): it moves once
+> piwheels publishes 3.14 `armhf` wheels for what the Pis run.
+>
 > This is the odd one out in this repo. Everything else is Wolfi/apko; this is
 > Debian + `docker buildx`. Read the "why" before extending it.
 
@@ -23,7 +26,7 @@ Python deps) stays easy:
 
 ## How it differs from the Wolfi `python` base
 
-| | `python` (Wolfi) | `python-arm32` (this) |
+| | `python-3.14` / `python` (Wolfi) | `python-arm32` (this) |
 |---|---|---|
 | Arches | amd64, arm64 | **arm/v7** (arm/v6 later) |
 | Base OS | Wolfi | Debian bookworm (slim) |
